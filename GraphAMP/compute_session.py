@@ -5,9 +5,12 @@ import numpy as np
 import asyncio
 from dataclasses import dataclass
 import networkx as nx
-from itertools import combinations
+from itertools import product
 import matplotlib.pyplot as plt
 from functools import reduce
+from tqdm import tqdm
+import os
+import joblib
 
 
 async def pull_history() -> list[MusiqlHistory]:
@@ -26,7 +29,7 @@ class SessionEvent:
 
 def build_session(rows:list[MusiqlHistory]) -> list[SessionEvent]:
     session = []
-    for event in rows:
+    for event in tqdm(rows):
         session.append(SessionEvent(
             event.uri,
             event.duration_played,
@@ -52,7 +55,7 @@ def pull_continuous_session(session:list[SessionEvent]) -> tuple[list[SessionEve
     continuity_gap = False
     K = None
     Ks = []
-    for i in range(len(session)):
+    for i in tqdm(range(len(session))):
         if i > 0 and session[i].duration_played < full_play_threshold:
             if not continuity_gap:
                 continuity_gap = True
@@ -61,7 +64,7 @@ def pull_continuous_session(session:list[SessionEvent]) -> tuple[list[SessionEve
                 if i > 0 and session[i-1].duration_played >= full_play_threshold:
                     start_event = session[i-1]
 
-                K = ContinuityBreak(start=session[i-1], end=None, skipped_songs=[session[i]])
+                K = ContinuityBreak(start=start_event, end=None, skipped_songs=[session[i]])
             else:
                 K.skipped_songs.append(session[i])
 
@@ -82,7 +85,7 @@ def build_session_dt_graph(session:list) -> nx.Graph:
         G.add_node(event.uri)
 
     uris = [event.uri for event in session]
-    for i, j in combinations(uris, 2):
+    for i, j in product(uris, repeat=2):
         G.add_edge(i, j, weight=0.0)
         G.add_edge(j, i, weight=0.0)
 
@@ -99,14 +102,13 @@ def calculate_Cs(G:nx.DiGraph, continuous_session:list[SessionEvent]):
 
     cs_index_map = {idx: uri for idx, uri in enumerate(cs_ids)}
 
-    for i in range(n):
+    for i in tqdm(range(n)):
         for j in range(i+1, n):
             delta_ij = j - i
             
             u = cs_index_map[i]
             v = cs_index_map[j]
             
-            if u == v: continue
             G[u][v]["weight"] += Cs(delta_ij, n)
             
 
@@ -128,22 +130,19 @@ def calculate_Cw(G:nx.DiGraph, Ks:list[ContinuityBreak], S:int):
             v = continuity_break.end.uri
 
             for u in cw_ids:
-                if u == v: continue
                 G[u][v]["weight"] += Cw_penalty(K,S)*(1-weighted_average)
 
         if continuity_break.start:
             u = continuity_break.start.uri
 
             for v in cw_ids:
-                if u == v: continue
                 G[u][v]["weight"] += Cw_penalty(K,S)*(1-weighted_average)
         
 
-        for i,j in combinations(range(K),2):
+        for i,j in product(range(K),repeat=2):
             u = cw_ids[i]
             v = cw_ids[j]
 
-            if u == v: continue
             G[u][v]["weight"] += Cw_penalty(K,S)
 
 
@@ -170,7 +169,7 @@ def historical_engagement(uri:str, session:list[SessionEvent]):
 
 
 def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
-    for u,v in combinations(G.nodes,2):
+    for u,v in tqdm(product(G.nodes,repeat=2)):
         Ceu = historical_engagement(u, session)
         Cev = historical_engagement(v, session)
         Ce = Ceu * Cev
@@ -195,12 +194,11 @@ async def main():
     calculate_Cw(Gdt, Ks, len(continuous_session))
     calculate_Ce(Gdt, session)
 
-    weights = [Gdt[u][v]["weight"]*0.1 for u,v in Gdt.edges]
+    file_name = f"recommendation-models/GraphAMP/models/GraphAMP_session.graph"
+    
+    os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
 
-    layout = nx.spring_layout(Gdt)
-    nx.draw(Gdt, label=True, pos=layout, width=weights, node_size=10)
-    plt.savefig("session_dt_graph.png")
-
+    joblib.dump(Gdt, file_name, compress=3)
 
 if __name__ == "__main__":
     asyncio.run(main())
