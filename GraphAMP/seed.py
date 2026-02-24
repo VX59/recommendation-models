@@ -1,9 +1,7 @@
 from sqlalchemy.future import select
-from sqlalchemy import func
 from db import async_session
 from models import MusiqlRepository
 import numpy as np
-import asyncio
 import os
 import networkx as nx
 from itertools import product
@@ -38,21 +36,17 @@ async def GraphAMP_seed():
     
     return G
 
-async def main():
+async def seed():
     seed = await GraphAMP_seed()
     file_name = f"recommendation-models/GraphAMP/models/GraphAMP.graph"
     
     os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
     joblib.dump(seed, file_name, compress=3)
     
-    A = nx.to_numpy_array(seed, weight="weight", nodelist=sorted(seed.nodes()))
-    plt.imshow(A, cmap='viridis', interpolation='nearest')
+    A = nx.to_numpy_array(seed, weight="weight")
+    plt.imshow(A, cmap='turbo', interpolation='nearest')
     plt.colorbar(label='Weight')
-    plt.xticks(ticks=np.arange(len(seed.nodes())), labels=sorted(seed.nodes()), rotation=90)
-    plt.yticks(ticks=np.arange(len(seed.nodes())), labels=sorted(seed.nodes()))
     
     plt.title("GraphAMP Seed Heatmap")
     plt.savefig("GraphAMP_seed_heatmap.png")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    plt.close()
