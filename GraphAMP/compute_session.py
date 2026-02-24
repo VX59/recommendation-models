@@ -18,7 +18,11 @@ async def pull_history() -> Optional[list[MusiqlHistory]]:
     now = datetime.now()
     start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    stmt = select(MusiqlHistory).where(MusiqlHistory.listened_at >= start_of_today)
+    stmt = (
+        select(MusiqlHistory)
+        #.where(MusiqlHistory.listened_at >= start_of_today)
+    )
+
     async with async_session() as session:
         result = await session.execute(stmt)
         rows = result.scalars().all()
