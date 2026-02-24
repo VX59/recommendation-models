@@ -11,15 +11,20 @@ from functools import reduce
 from tqdm import tqdm
 import os
 import joblib
+from datetime import datetime
+from typing import Optional
 
+async def pull_history() -> Optional[list[MusiqlHistory]]:
+    now = datetime.now()
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-async def pull_history() -> list[MusiqlHistory]:
-    stmt = select(MusiqlHistory)
+    stmt = select(MusiqlHistory).where(MusiqlHistory.listened_at >= start_of_today)
     async with async_session() as session:
         result = await session.execute(stmt)
         rows = result.scalars().all()
         if rows: return rows
 
+    return None
 
 @dataclass
 class SessionEvent:
@@ -179,12 +184,16 @@ def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
         if not G.has_edge(v, u):
             G.add_edge(v, u, weight=0.0)
 
-        G[u][v]["weight"] += Ce
-        G[v][u]["weight"] += Ce
+        G[u][v]["weight"] *= Ce
+        G[v][u]["weight"] *= Ce
 
 
-async def main():
+async def compute_session():
     rows = await pull_history()
+    if rows is None:
+        print("There is no new music history")
+        return
+    
     session = build_session(rows)
     continuous_session, Ks = pull_continuous_session(session)
 
@@ -199,6 +208,3 @@ async def main():
     os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
 
     joblib.dump(Gdt, file_name, compress=3)
-
-if __name__ == "__main__":
-    asyncio.run(main())

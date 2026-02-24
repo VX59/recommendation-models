@@ -45,11 +45,9 @@ async def main():
     os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
     joblib.dump(seed, file_name, compress=3)
     
-    A = nx.to_numpy_array(seed, weight="weight", nodelist=sorted(seed.nodes()))
-    plt.imshow(A, cmap='viridis', interpolation='nearest')
+    A = nx.to_numpy_array(seed, weight="weight")
+    plt.imshow(A, cmap='turbo', interpolation='nearest')
     plt.colorbar(label='Weight')
-    plt.xticks(ticks=np.arange(len(seed.nodes())), labels=sorted(seed.nodes()), rotation=90)
-    plt.yticks(ticks=np.arange(len(seed.nodes())), labels=sorted(seed.nodes()))
     
     plt.title("GraphAMP Seed Heatmap")
     plt.savefig("GraphAMP_seed_heatmap.png")
