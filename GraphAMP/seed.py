@@ -24,15 +24,6 @@ async def GraphAMP_seed():
     for i, j in tqdm(product(G.nodes, repeat=2)):
         G.add_edge(i,j, weight=np.random.rand())
         G.add_edge(j,i, weight=np.random.rand())
-
-    for node in G.nodes:
-        out_edges = G.out_edges(node, data=True)
-        
-        total_weight = sum(data["weight"] for _, _, data in out_edges)
-        
-        if total_weight > 0:
-            for _, _, data in out_edges:
-                data["weight"] /= total_weight
     
     return G
 

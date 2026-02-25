@@ -2,11 +2,9 @@ from sqlalchemy.future import select
 from db import async_session
 from models import MusiqlHistory
 import numpy as np
-import asyncio
 from dataclasses import dataclass
 import networkx as nx
 from itertools import product
-import matplotlib.pyplot as plt
 from functools import reduce
 from tqdm import tqdm
 import os
@@ -16,11 +14,11 @@ from typing import Optional
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:
     now = datetime.now()
-    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_day = now.replace(day=23, hour=0, minute=0, second=0, microsecond=0) # change
 
     stmt = (
         select(MusiqlHistory)
-        #.where(MusiqlHistory.listened_at >= start_of_today)
+        #.where(MusiqlHistory.listened_at >= start_of_day)
     )
 
     async with async_session() as session:
