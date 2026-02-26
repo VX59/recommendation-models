@@ -1,43 +1,48 @@
 from sqlalchemy.future import select
 from db import async_session
 from models import MusiqlRepository
-import numpy as np
 import os
 import networkx as nx
 from itertools import product
-from tqdm import tqdm
 import joblib
-import matplotlib.pyplot as plt
 
-async def GraphAMP_seed():
+async def fetch_library() -> list[MusiqlRepository]:
     stmt = select(MusiqlRepository)
 
     async with async_session() as session:
         result = await session.execute(stmt)
         rows:list[MusiqlRepository] = result.scalars().all()
 
-    G = nx.DiGraph()
-    for record in tqdm(rows):
+        return rows
+
+async def GraphAMP_seed(file_name:str):
+    if not os.path.exists(file_name):
+        G = nx.DiGraph()
+    else:
+        G:nx.DiGraph = joblib.load(file_name)
+
+    rows:list[MusiqlRepository] = await fetch_library()
+
+    new_nodes, new_edges = [] , 0
+
+    for record in rows:
         if record.uri not in G.nodes:
             G.add_node(record.uri)
+            new_nodes.append(record.uri)
 
-    for i, j in tqdm(product(G.nodes, repeat=2)):
-        G.add_edge(i,j, weight=np.random.rand())
-        G.add_edge(j,i, weight=np.random.rand())
-    
+    for i, j in product(G.nodes, repeat=2):
+        if i in new_nodes or j in new_nodes and not G.has_edge(i,j):
+            G.add_edge(i,j, weight=1)
+            new_edges += 1
+            
+    print(f"added {len(new_nodes)} new nodes, {new_edges} new edges")
+
     return G
 
-async def seed():
-    seed = await GraphAMP_seed()
-    file_name = f"recommendation-models/GraphAMP/models/GraphAMP.graph"
-    
+
+async def seed_new():
     os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
+    file_name = f"recommendation-models/GraphAMP/models/GraphAMP.graph"
+
+    seed:nx.DiGraph = await GraphAMP_seed(file_name)
     joblib.dump(seed, file_name, compress=3)
-    
-    A = nx.to_numpy_array(seed, weight="weight")
-    plt.imshow(A, cmap='turbo', interpolation='nearest')
-    plt.colorbar(label='Weight')
-    
-    plt.title("GraphAMP Seed Heatmap")
-    plt.savefig("GraphAMP_seed_heatmap.png")
-    plt.close()
