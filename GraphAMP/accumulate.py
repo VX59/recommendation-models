@@ -13,7 +13,7 @@ def accumulate():
     lr = 1
     existence_threshold = 1e-4
 
-    library_edges = len([u for u,v in library_graph.edges if library_graph[u][v]["weight"] > 0])
+    library_edges = len(library_graph.edges)
 
     for u,v in session_graph.edges:
         session_weight = session_graph[u][v]["weight"]
@@ -34,11 +34,11 @@ def accumulate():
 
     nodes_modified_amount = float(session_nodes)/float(library_nodes)
 
-    session_edges = len([u for u,v in session_graph.edges if session_graph[u][v]["weight"] > 0])
+    session_edges = len([u for u,v in session_graph.edges if session_graph[u][v]["weight"] != 0])
 
     edges_modified_amount = float(session_edges)/float(library_edges)
 
-    new_libary_edges = len([u for u,v in library_graph.edges if library_graph[u][v]["weight"] > 0])
+    new_libary_edges = len(library_graph.edges)
     dropped_edges_amount = 1-(float(new_libary_edges)/float(library_edges))
 
     print(f"updating {session_nodes}/{library_nodes} - {nodes_modified_amount}% of songs in library")
@@ -47,7 +47,7 @@ def accumulate():
 
     joblib.dump(library_graph, library_file_name, compress=3)
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now().isoformat()
 
     try:
         with open("updates.log", "r") as reader:

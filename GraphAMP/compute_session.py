@@ -8,9 +8,10 @@ from itertools import product
 from functools import reduce
 import os
 import joblib
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Optional
 from pathlib import Path
+
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:
     last = None
@@ -126,7 +127,9 @@ def calculate_Cs(G:nx.DiGraph, continuous_session:list[SessionEvent]):
             u = cs_index_map[i]
             v = cs_index_map[j]
             
-            G[u][v]["weight"] += Cs(delta_ij, n)
+            cs = Cs(delta_ij, n)
+
+            G[u][v]["weight"] += cs
             
 
 def Cw_penalty(K:int, S:int):
@@ -164,25 +167,25 @@ def calculate_Cw(G:nx.DiGraph, Ks:list[ContinuityBreak], S:int):
 
 
 def historical_engagement(uri:str, session:list[SessionEvent]):
-    finished_threshold = 0.99
+    finished_threshold = 1-(1e-2)
 
     def count_num_played(acc, event:SessionEvent):
         if event.uri == uri:
-            acc += 1
+            acc += 1.0
         return acc
 
-    def count_not_finished(acc, event:SessionEvent):
-        if event.duration_played < finished_threshold and event.uri == uri:
-            acc += 1
+    def count_finished(acc, event:SessionEvent):
+        if event.duration_played >= finished_threshold and event.uri == uri:
+            acc += 1.0
         return acc
     
-    not_finished:float = reduce(count_not_finished, session, 0.0)
+    not_finished:float = reduce(count_finished, session, 0.0)
     num_played:float = reduce(count_num_played, session, 0.0)
 
     if num_played == 0:
         return 0
 
-    return not_finished/num_played
+    return float(not_finished/num_played)
 
 
 def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
@@ -193,12 +196,9 @@ def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
 
         if not G.has_edge(u, v):
             G.add_edge(u, v, weight=0.0)
-        if not G.has_edge(v, u):
-            G.add_edge(v, u, weight=0.0)
 
         G[u][v]["weight"] *= Ce
-        G[v][u]["weight"] *= Ce
-
+        
 
 async def compute_session() -> bool:
     rows = await pull_history()
@@ -210,14 +210,12 @@ async def compute_session() -> bool:
 
     Gdt:nx.DiGraph = build_session_dt_graph(session)
 
+    calculate_Cw(Gdt, Ks, len(session))
     calculate_Cs(Gdt, continuous_session)
-    calculate_Cw(Gdt, Ks, len(continuous_session))
     calculate_Ce(Gdt, session)
-
-    file_name = f"recommendation-models/GraphAMP/models/GraphAMP_session.graph"
     
+    file_name = f"recommendation-models/GraphAMP/models/GraphAMP_session.graph"
     os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
 
     joblib.dump(Gdt, file_name, compress=3)
-
     return True
