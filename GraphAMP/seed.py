@@ -1,6 +1,6 @@
 from sqlalchemy.future import select
-from db import async_session
-from models import MusiqlRepository
+from musiql_api.db import async_session
+from musiql_api.models import MusiqlRepository
 import os
 import networkx as nx
 from itertools import product
