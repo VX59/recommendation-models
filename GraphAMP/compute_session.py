@@ -2,26 +2,35 @@ from sqlalchemy.future import select
 from musiql_api.db import async_session
 from musiql_api.models import MusiqlHistory
 import numpy as np
-import asyncio
 from dataclasses import dataclass
 import networkx as nx
 from itertools import product
-import matplotlib.pyplot as plt
 from functools import reduce
-from tqdm import tqdm
 import os
 import joblib
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
+
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:
-    now = datetime.now()
-    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    last = None
+    log_file = Path("updates.log")
 
-    stmt = (
-        select(MusiqlHistory)
-        #.where(MusiqlHistory.listened_at >= start_of_today)
-    )
+    if log_file.exists():
+        first_line = log_file.read_text().splitlines()
+        if first_line:
+            last = datetime.fromisoformat(first_line[0].strip())
+
+    if last:        
+        stmt = (
+            select(MusiqlHistory)
+            .where(MusiqlHistory.listened_at >= last)
+        )
+    else:
+        stmt = (
+            select(MusiqlHistory)
+        )
 
     async with async_session() as session:
         result = await session.execute(stmt)
@@ -38,7 +47,7 @@ class SessionEvent:
 
 def build_session(rows:list[MusiqlHistory]) -> list[SessionEvent]:
     session = []
-    for event in tqdm(rows):
+    for event in rows:
         session.append(SessionEvent(
             event.uri,
             event.duration_played,
@@ -64,7 +73,7 @@ def pull_continuous_session(session:list[SessionEvent]) -> tuple[list[SessionEve
     continuity_gap = False
     K = None
     Ks = []
-    for i in tqdm(range(len(session))):
+    for i in range(len(session)):
         if i > 0 and session[i].duration_played < full_play_threshold:
             if not continuity_gap:
                 continuity_gap = True
@@ -111,14 +120,16 @@ def calculate_Cs(G:nx.DiGraph, continuous_session:list[SessionEvent]):
 
     cs_index_map = {idx: uri for idx, uri in enumerate(cs_ids)}
 
-    for i in tqdm(range(n)):
+    for i in range(n):
         for j in range(i+1, n):
             delta_ij = j - i
             
             u = cs_index_map[i]
             v = cs_index_map[j]
             
-            G[u][v]["weight"] += Cs(delta_ij, n)
+            cs = Cs(delta_ij, n)
+
+            G[u][v]["weight"] += cs
             
 
 def Cw_penalty(K:int, S:int):
@@ -156,59 +167,55 @@ def calculate_Cw(G:nx.DiGraph, Ks:list[ContinuityBreak], S:int):
 
 
 def historical_engagement(uri:str, session:list[SessionEvent]):
-    finished_threshold = 0.99
+    finished_threshold = 1-(1e-2)
 
     def count_num_played(acc, event:SessionEvent):
         if event.uri == uri:
-            acc += 1
+            acc += 1.0
         return acc
 
-    def count_not_finished(acc, event:SessionEvent):
-        if event.duration_played < finished_threshold and event.uri == uri:
-            acc += 1
+    def count_finished(acc, event:SessionEvent):
+        if event.duration_played >= finished_threshold and event.uri == uri:
+            acc += 1.0
         return acc
     
-    not_finished:float = reduce(count_not_finished, session, 0.0)
+    not_finished:float = reduce(count_finished, session, 0.0)
     num_played:float = reduce(count_num_played, session, 0.0)
 
     if num_played == 0:
         return 0
 
-    return not_finished/num_played
+    return float(not_finished/num_played)
 
 
 def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
-    for u,v in tqdm(product(G.nodes,repeat=2)):
+    for u,v in product(G.nodes,repeat=2):
         Ceu = historical_engagement(u, session)
         Cev = historical_engagement(v, session)
         Ce = Ceu * Cev
 
         if not G.has_edge(u, v):
             G.add_edge(u, v, weight=0.0)
-        if not G.has_edge(v, u):
-            G.add_edge(v, u, weight=0.0)
 
         G[u][v]["weight"] *= Ce
-        G[v][u]["weight"] *= Ce
+        
 
-
-async def compute_session():
+async def compute_session() -> bool:
     rows = await pull_history()
     if rows is None:
-        print("There is no new music history")
-        return
+        return False
     
     session = build_session(rows)
     continuous_session, Ks = pull_continuous_session(session)
 
     Gdt:nx.DiGraph = build_session_dt_graph(session)
 
+    calculate_Cw(Gdt, Ks, len(session))
     calculate_Cs(Gdt, continuous_session)
-    calculate_Cw(Gdt, Ks, len(continuous_session))
     calculate_Ce(Gdt, session)
-
-    file_name = f"recommendation-models/GraphAMP/models/GraphAMP_session.graph"
     
+    file_name = f"recommendation-models/GraphAMP/models/GraphAMP_session.graph"
     os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
 
     joblib.dump(Gdt, file_name, compress=3)
+    return True
