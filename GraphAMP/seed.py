@@ -1,25 +1,37 @@
 from sqlalchemy.future import select
-from musiql_api.db import async_session
-from musiql_api.models import MusiqlRepository
-import os
+from sqlalchemy.orm import sessionmaker
+from database.db import get_session
+from database.models import MusiqlRepository
+from s3_service import S3Service
+
 import networkx as nx
 from itertools import product
-import joblib
+import pickle
 
 async def fetch_library() -> list[MusiqlRepository]:
     stmt = select(MusiqlRepository)
 
-    async with async_session() as session:
+    session_maker:sessionmaker = get_session()
+
+    async with session_maker() as session:
         result = await session.execute(stmt)
         rows:list[MusiqlRepository] = result.scalars().all()
 
         return rows
 
-async def GraphAMP_seed(file_name:str):
-    if not os.path.exists(file_name):
+
+async def GraphAMP_seed():
+    obj_key = "recommendation_models/GraphAMP.model"
+
+    s3_service = S3Service.get_s3_service()
+
+    try:
+        file_stream = s3_service.pull_obj_stream(obj_key)
+        graph_data = file_stream.read()
+        G = pickle.loads(graph_data)
+
+    except KeyError:
         G = nx.DiGraph()
-    else:
-        G:nx.DiGraph = joblib.load(file_name)
 
     rows:list[MusiqlRepository] = await fetch_library()
 
@@ -40,9 +52,6 @@ async def GraphAMP_seed(file_name:str):
     return G
 
 
-async def seed_new():
-    os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
-    file_name = f"recommendation-models/GraphAMP/models/GraphAMP.graph"
-
-    seed:nx.DiGraph = await GraphAMP_seed(file_name)
-    joblib.dump(seed, file_name, compress=3)
+async def seed_new() -> nx.DiGraph:
+    seed:nx.DiGraph = await GraphAMP_seed()
+    return seed
