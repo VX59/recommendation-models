@@ -1,14 +1,14 @@
 import networkx as nx
-import joblib
+import pickle
 import matplotlib.pyplot as plt
-from datetime import datetime, timezone
+from datetime import datetime
+from sqlalchemy.orm import sessionmaker
 
-def accumulate():
-    library_file_name = f"recommendation-models/GraphAMP/models/GraphAMP.graph"
-    session_file_name = f"recommendation-models/GraphAMP/models/GraphAMP_session.graph"
+from s3_service import S3Service
+from database.db import get_session
+from database.models import ModelUpdates 
 
-    library_graph:nx.DiGraph = joblib.load(library_file_name)
-    session_graph:nx.DiGraph = joblib.load(session_file_name)
+async def accumulate(library_graph:nx.DiGraph, session_graph:nx.DiGraph):
 
     lr = 1
     existence_threshold = 1e-4
@@ -45,26 +45,22 @@ def accumulate():
     print(f"updating {session_edges}/{library_edges} - {edges_modified_amount}% of transitions in library")
     print(f"dropped {library_edges-new_libary_edges}/{library_edges} - {dropped_edges_amount}% of transitions in library")
 
-    joblib.dump(library_graph, library_file_name, compress=3)
+    data = pickle.dumps(library_graph)
+    obj_key = "recommendation_models/GraphAMP.model"
 
-    now = datetime.now().isoformat()
+    s3_service = S3Service.get_s3_service()
+    s3_service.put_object(data, obj_key)
 
-    try:
-        with open("updates.log", "r") as reader:
-            old_updates = reader.read()
-    except FileNotFoundError:
-        old_updates = ""
-
-    with open("updates.log", "w") as writer:
-        writer.write(now + "\n")
-        writer.write(old_updates)
+    session_maker:sessionmaker = get_session()
+    
+    async with session_maker() as session, session.begin():
+        session.add(ModelUpdates())
 
     A = nx.to_numpy_array(library_graph, weight="weight")
 
     plt.imshow(A, cmap='coolwarm', interpolation='nearest')
     plt.colorbar(label='Weight')
 
-
-    plt.title(f"GraphAMP Heatmap, lr={lr}, {now}")
+    plt.title(f"GraphAMP Heatmap, lr={lr}, {datetime.now().isoformat()}")
     plt.savefig("GraphAMP_heatmap.png")
     plt.close()

@@ -1,26 +1,29 @@
 from sqlalchemy.future import select
-from musiql_api.db import async_session
-from musiql_api.models import MusiqlHistory
+from sqlalchemy import desc
+from sqlalchemy.orm import sessionmaker
+from database.db import get_session
+from database.models import MusiqlHistory, ModelUpdates
+
 import numpy as np
 from dataclasses import dataclass
 import networkx as nx
 from itertools import product
 from functools import reduce
-import os
-import joblib
-from datetime import datetime
 from typing import Optional
-from pathlib import Path
 
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:
-    last = None
-    log_file = Path("updates.log")
+    session_maker:sessionmaker = get_session()
 
-    if log_file.exists():
-        first_line = log_file.read_text().splitlines()
-        if first_line:
-            last = datetime.fromisoformat(first_line[0].strip())
+    stmt = (
+        select(ModelUpdates.dttm)
+        .order_by(desc(ModelUpdates.dttm))
+        .limit(1)
+    )
+
+    async with session_maker() as session:
+        result = await session.execute(stmt)
+        last = result.scalar_one_or_none()
 
     if last:        
         stmt = (
@@ -32,7 +35,7 @@ async def pull_history() -> Optional[list[MusiqlHistory]]:
             select(MusiqlHistory)
         )
 
-    async with async_session() as session:
+    async with session_maker() as session:
         result = await session.execute(stmt)
         rows = result.scalars().all()
         if rows: return rows
@@ -200,10 +203,10 @@ def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
         G[u][v]["weight"] *= Ce
         
 
-async def compute_session() -> bool:
+async def compute_session() -> Optional[nx.DiGraph]:
     rows = await pull_history()
     if rows is None:
-        return False
+        return None
     
     session = build_session(rows)
     continuous_session, Ks = pull_continuous_session(session)
@@ -214,8 +217,4 @@ async def compute_session() -> bool:
     calculate_Cs(Gdt, continuous_session)
     calculate_Ce(Gdt, session)
     
-    file_name = f"recommendation-models/GraphAMP/models/GraphAMP_session.graph"
-    os.makedirs("recommendation-models/GraphAMP/models", exist_ok=True)
-
-    joblib.dump(Gdt, file_name, compress=3)
-    return True
+    return Gdt
