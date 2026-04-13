@@ -35,18 +35,27 @@ async def GraphAMP_seed():
 
     rows:list[MusiqlRepository] = await fetch_library()
 
-    new_nodes, new_edges = [] , 0
+    new_nodes, new_edges, removed_nodes = [] , 0, 0
 
-    for record in rows:
-        if record.uri not in G.nodes:
-            G.add_node(record.uri)
-            new_nodes.append(record.uri)
+    db_uris = [record.uri for record in rows]
+    
+    for uri in db_uris:
+        if uri not in G.nodes:
+            G.add_node(uri)
+            new_nodes.append(uri)
+
+    nodes = list(G.nodes)
+    for node in nodes:
+        if node not in db_uris:
+            G.remove_node(node)
+            removed_nodes += 1
 
     for i, j in product(G.nodes, repeat=2):
         if i in new_nodes or j in new_nodes and not G.has_edge(i,j):
             G.add_edge(i,j, weight=1)
             new_edges += 1
-            
+
+    print(f"removed {removed_nodes} nodes")            
     print(f"added {len(new_nodes)} new nodes, {new_edges} new edges")
 
     return G
