@@ -9,5 +9,6 @@ async def main():
     if Gdt := await compute_session():
         await accumulate(G, Gdt)
 
+
 if __name__ == "__main__":
     asyncio.run(main())

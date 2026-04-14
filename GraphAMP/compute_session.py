@@ -13,65 +13,63 @@ from typing import Optional
 
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:
-    session_maker:sessionmaker = get_session()
+    session_maker: sessionmaker = get_session()
 
-    stmt = (
-        select(ModelUpdates.dttm)
-        .order_by(desc(ModelUpdates.dttm))
-        .limit(1)
-    )
+    stmt = select(ModelUpdates.dttm).order_by(desc(ModelUpdates.dttm)).limit(1)
 
     async with session_maker() as session:
         result = await session.execute(stmt)
         last = result.scalar_one_or_none()
 
-    if last:        
-        stmt = (
-            select(MusiqlHistory)
-            .where(MusiqlHistory.listened_at >= last)
-        )
+    if last:
+        stmt = select(MusiqlHistory).where(MusiqlHistory.listened_at >= last)
     else:
-        stmt = (
-            select(MusiqlHistory)
-        )
+        stmt = select(MusiqlHistory)
 
     async with session_maker() as session:
         result = await session.execute(stmt)
         rows = result.scalars().all()
-        if rows: return rows
+        if rows:
+            return rows
 
     return None
 
+
 @dataclass
 class SessionEvent:
-    uri:str
-    duration_played:float
+    uri: str
+    duration_played: float
 
 
-def build_session(rows:list[MusiqlHistory]) -> list[SessionEvent]:
+def build_session(rows: list[MusiqlHistory]) -> list[SessionEvent]:
     session = []
     for event in rows:
-        session.append(SessionEvent(
-            event.uri,
-            event.duration_played,
-        ))
+        session.append(
+            SessionEvent(
+                event.uri,
+                event.duration_played,
+            )
+        )
     return session
 
 
 @dataclass
 class ContinuityBreak:
-    start:SessionEvent
-    end:SessionEvent
-    skipped_songs:list[SessionEvent]
+    start: SessionEvent
+    end: SessionEvent
+    skipped_songs: list[SessionEvent]
 
 
-def pull_continuous_session(session:list[SessionEvent]) -> tuple[list[SessionEvent], list[ContinuityBreak]]:
+def pull_continuous_session(
+    session: list[SessionEvent],
+) -> tuple[list[SessionEvent], list[ContinuityBreak]]:
     continuous_session = []
 
     full_play_threshold = 0.99
 
     for session_event in session:
-        if session_event.duration_played >= full_play_threshold: continuous_session.append(session_event)
+        if session_event.duration_played >= full_play_threshold:
+            continuous_session.append(session_event)
 
     continuity_gap = False
     K = None
@@ -82,10 +80,12 @@ def pull_continuous_session(session:list[SessionEvent]) -> tuple[list[SessionEve
                 continuity_gap = True
 
                 start_event = None
-                if i > 0 and session[i-1].duration_played >= full_play_threshold:
-                    start_event = session[i-1]
+                if i > 0 and session[i - 1].duration_played >= full_play_threshold:
+                    start_event = session[i - 1]
 
-                K = ContinuityBreak(start=start_event, end=None, skipped_songs=[session[i]])
+                K = ContinuityBreak(
+                    start=start_event, end=None, skipped_songs=[session[i]]
+                )
             else:
                 K.skipped_songs.append(session[i])
 
@@ -100,7 +100,7 @@ def pull_continuous_session(session:list[SessionEvent]) -> tuple[list[SessionEve
     return continuous_session, Ks
 
 
-def build_session_dt_graph(session:list) -> nx.Graph:
+def build_session_dt_graph(session: list) -> nx.Graph:
     G = nx.DiGraph()
     for event in session:
         G.add_node(event.uri)
@@ -113,39 +113,40 @@ def build_session_dt_graph(session:list) -> nx.Graph:
     return G
 
 
-def Cs(delta_ij,n):
-    return np.exp(-((delta_ij-1)/np.sqrt(n)))
+def Cs(delta_ij, n):
+    return np.exp(-((delta_ij - 1) / np.sqrt(n)))
 
 
-def calculate_Cs(G:nx.DiGraph, continuous_session:list[SessionEvent]):
+def calculate_Cs(G: nx.DiGraph, continuous_session: list[SessionEvent]):
     cs_ids = [event.uri for event in continuous_session]
     n = len(cs_ids)
 
     cs_index_map = {idx: uri for idx, uri in enumerate(cs_ids)}
 
     for i in range(n):
-        for j in range(i+1, n):
+        for j in range(i + 1, n):
             delta_ij = j - i
-            
+
             u = cs_index_map[i]
             v = cs_index_map[j]
-            
+
             cs = Cs(delta_ij, n)
 
             G[u][v]["weight"] += cs
-            
-
-def Cw_penalty(K:int, S:int):
-    return np.exp(-(np.pow(K,2))/(S))-1
 
 
-def calculate_Cw(G:nx.DiGraph, Ks:list[ContinuityBreak], S:int):
+def Cw_penalty(K: int, S: int):
+    return np.exp(-(np.pow(K, 2)) / (S)) - 1
+
+
+def calculate_Cw(G: nx.DiGraph, Ks: list[ContinuityBreak], S: int):
     for continuity_break in Ks:
-
-        weighted_average = np.average([event.duration_played for event in continuity_break.skipped_songs])
-        cw_ids = [event.uri for event in continuity_break.skipped_songs]        
+        weighted_average = np.average(
+            [event.duration_played for event in continuity_break.skipped_songs]
+        )
+        cw_ids = [event.uri for event in continuity_break.skipped_songs]
         K = len(cw_ids)
-        
+
         if K == 0:
             continue
 
@@ -153,46 +154,45 @@ def calculate_Cw(G:nx.DiGraph, Ks:list[ContinuityBreak], S:int):
             v = continuity_break.end.uri
 
             for u in cw_ids:
-                G[u][v]["weight"] += Cw_penalty(K,S)*(1-weighted_average)
+                G[u][v]["weight"] += Cw_penalty(K, S) * (1 - weighted_average)
 
         if continuity_break.start:
             u = continuity_break.start.uri
 
             for v in cw_ids:
-                G[u][v]["weight"] += Cw_penalty(K,S)*(1-weighted_average)
-        
+                G[u][v]["weight"] += Cw_penalty(K, S) * (1 - weighted_average)
 
-        for i,j in product(range(K),repeat=2):
+        for i, j in product(range(K), repeat=2):
             u = cw_ids[i]
             v = cw_ids[j]
 
-            G[u][v]["weight"] += Cw_penalty(K,S)
+            G[u][v]["weight"] += Cw_penalty(K, S)
 
 
-def historical_engagement(uri:str, session:list[SessionEvent]):
-    finished_threshold = 1-(1e-2)
+def historical_engagement(uri: str, session: list[SessionEvent]):
+    finished_threshold = 1 - (1e-2)
 
-    def count_num_played(acc, event:SessionEvent):
+    def count_num_played(acc, event: SessionEvent):
         if event.uri == uri:
             acc += 1.0
         return acc
 
-    def count_finished(acc, event:SessionEvent):
+    def count_finished(acc, event: SessionEvent):
         if event.duration_played >= finished_threshold and event.uri == uri:
             acc += 1.0
         return acc
-    
-    not_finished:float = reduce(count_finished, session, 0.0)
-    num_played:float = reduce(count_num_played, session, 0.0)
+
+    not_finished: float = reduce(count_finished, session, 0.0)
+    num_played: float = reduce(count_num_played, session, 0.0)
 
     if num_played == 0:
         return 0
 
-    return float(not_finished/num_played)
+    return float(not_finished / num_played)
 
 
-def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
-    for u,v in product(G.nodes,repeat=2):
+def calculate_Ce(G: nx.DiGraph, session: list[SessionEvent]):
+    for u, v in product(G.nodes, repeat=2):
         Ceu = historical_engagement(u, session)
         Cev = historical_engagement(v, session)
         Ce = Ceu * Cev
@@ -201,20 +201,20 @@ def calculate_Ce(G:nx.DiGraph, session:list[SessionEvent]):
             G.add_edge(u, v, weight=0.0)
 
         G[u][v]["weight"] *= Ce
-        
+
 
 async def compute_session() -> Optional[nx.DiGraph]:
     rows = await pull_history()
     if rows is None:
         return None
-    
+
     session = build_session(rows)
     continuous_session, Ks = pull_continuous_session(session)
 
-    Gdt:nx.DiGraph = build_session_dt_graph(session)
+    Gdt: nx.DiGraph = build_session_dt_graph(session)
 
     calculate_Cw(Gdt, Ks, len(session))
     calculate_Cs(Gdt, continuous_session)
     calculate_Ce(Gdt, session)
-    
+
     return Gdt
