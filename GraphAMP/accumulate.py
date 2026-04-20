@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from sqlalchemy.orm import sessionmaker
 
-from s3_service import S3Service
+from s3_service import S3Service, get_s3_service
 from database.db import get_session
 from database.models import ModelUpdates
 
@@ -56,7 +56,7 @@ async def accumulate(library_graph: nx.DiGraph, session_graph: nx.DiGraph):
     data = pickle.dumps(library_graph)
     obj_key = "recommendation_models/GraphAMP.model"
 
-    s3_service = S3Service.get_s3_service()
+    s3_service:S3Service = get_s3_service()
     s3_service.put_object(data, obj_key)
 
     session_maker: sessionmaker = get_session()

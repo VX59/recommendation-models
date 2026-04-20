@@ -2,7 +2,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
 from database.db import get_session
 from database.models import MusiqlRepository
-from s3_service import S3Service
+from s3_service import S3Service, get_s3_service
 
 import networkx as nx
 from itertools import product
@@ -24,7 +24,7 @@ async def fetch_library() -> list[MusiqlRepository]:
 async def GraphAMP_seed():
     obj_key = "recommendation_models/GraphAMP.model"
 
-    s3_service = S3Service.get_s3_service()
+    s3_service:S3Service = get_s3_service()
 
     try:
         file_stream = s3_service.pull_obj_stream(obj_key)
