@@ -1,7 +1,7 @@
 from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
 from database.db import get_session
-from database.models import MusiqlRepository
+from database.models import MusiqlRepository, UserLirbary
 from s3_service import S3Service, get_s3_service
 
 import networkx as nx
@@ -10,7 +10,12 @@ import pickle
 
 
 async def fetch_library() -> list[MusiqlRepository]:
-    stmt = select(MusiqlRepository)
+    stmt = (
+        select(MusiqlRepository)
+        .select_from(UserLirbary)
+        .join(MusiqlRepository, UserLirbary.record_id == MusiqlRepository.uri)
+        .where(UserLirbary.user_id == "derosaj-288b87")
+    ).order_by(MusiqlRepository.created.desc())
 
     session_maker: sessionmaker = get_session()
 
@@ -23,38 +28,53 @@ async def fetch_library() -> list[MusiqlRepository]:
 
 async def GraphAMP_seed():
     obj_key = "recommendation_models/GraphAMP.model"
-
-    s3_service:S3Service = get_s3_service()
+    s3_service: S3Service = get_s3_service()
 
     try:
         file_stream = s3_service.pull_obj_stream(obj_key)
         graph_data = file_stream.read()
         G = pickle.loads(graph_data)
 
-    except KeyError:
+    except Exception:
         G = nx.DiGraph()
 
     rows: list[MusiqlRepository] = await fetch_library()
+    db_uris = {record.uri for record in rows}
 
-    new_nodes, new_edges, removed_nodes = [], 0, 0
-
-    db_uris = [record.uri for record in rows]
+    # --- 1. Add new nodes ---
+    new_nodes = set()
 
     for uri in db_uris:
-        if uri not in G.nodes:
+        if uri not in G:
             G.add_node(uri)
-            new_nodes.append(uri)
+            new_nodes.add(uri)
 
-    nodes = list(G.nodes)
-    for node in nodes:
+
+    # --- 2. Remove stale nodes ---
+    removed_nodes = 0
+    for node in list(G.nodes):
         if node not in db_uris:
             G.remove_node(node)
             removed_nodes += 1
 
-    for i, j in product(G.nodes, repeat=2):
-        if i in new_nodes or j in new_nodes and not G.has_edge(i, j):
-            G.add_edge(i, j, weight=1)
-            new_edges += 1
+    # --- 3. Initialize edges for new nodes (weak prior only) ---
+    new_edges = 0
+    nodes = list(G.nodes)
+
+    for i in nodes:
+        for j in nodes:
+
+            if not G.has_edge(i, j):
+                # only lightly connect new nodes (NOT full dense init)
+                if i in new_nodes or j in new_nodes:
+                    G.add_edge(i, j, weight=0.05)
+                    new_edges += 1
+
+    # --- 4. Light self-reinforcement for new nodes ---
+    for uri in new_nodes:
+        # helps prevent uniform collapse in normalization
+        for neighbor in G.successors(uri):
+            G[uri][neighbor]["weight"] *= 1.5
 
     print(f"removed {removed_nodes} nodes")
     print(f"added {len(new_nodes)} new nodes, {new_edges} new edges")
