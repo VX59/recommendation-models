@@ -1,16 +1,18 @@
 import networkx as nx
 import pickle
-import matplotlib.pyplot as plt
-from datetime import datetime
 from sqlalchemy.orm import sessionmaker
 
-from s3_service import S3Service, get_s3_service
+from s3_service import S3
 from database.db import get_session
-from database.models import ModelUpdates
+from database.models import ModelUpdates, Models
 
 
-async def accumulate(library_graph: nx.DiGraph, session_graph: nx.DiGraph):
-
+async def accumulate(
+    library_graph: nx.DiGraph,
+    session_graph: nx.DiGraph,
+    model: Models,
+    s3_service:S3
+):
     lr = 1
     existence_threshold = 1e-4
 
@@ -28,21 +30,11 @@ async def accumulate(library_graph: nx.DiGraph, session_graph: nx.DiGraph):
                 library_graph.remove_edge(u, v)
 
     data = pickle.dumps(library_graph)
-    obj_key = "recommendation_models/GraphAMP.model"
+    obj_key = f"recommendation_models/GAMP/{model.uri}.gamp"
 
-    s3_service:S3Service = get_s3_service()
     s3_service.put_object(data, obj_key)
 
     session_maker: sessionmaker = get_session()
 
     async with session_maker() as session, session.begin():
         session.add(ModelUpdates())
-
-    A = nx.to_numpy_array(library_graph, weight="weight")
-
-    plt.imshow(A, cmap="coolwarm", interpolation="nearest")
-    plt.colorbar(label="Weight")
-
-    plt.title(f"GraphAMP Heatmap, lr={lr}, {datetime.now().isoformat()}")
-    plt.savefig("GraphAMP_heatmap.png")
-    plt.close()

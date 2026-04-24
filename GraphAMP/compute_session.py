@@ -7,14 +7,11 @@ from database.models import MusiqlHistory, ModelUpdates
 import numpy as np
 from dataclasses import dataclass
 import networkx as nx
-from itertools import product
-from functools import reduce
 from typing import Optional
 
 import logging
 
 logger = logging.getLogger(__name__)
-
 
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:

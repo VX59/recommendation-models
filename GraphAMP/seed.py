@@ -1,20 +1,19 @@
 from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
 from database.db import get_session
-from database.models import MusiqlRepository, UserLirbary
-from s3_service import S3Service, get_s3_service
+from database.models import MusiqlRepository, UserLirbary, Models
+from s3_service import S3
 
 import networkx as nx
-from itertools import product
 import pickle
 
 
-async def fetch_library() -> list[MusiqlRepository]:
+async def fetch_library(user_id:str) -> list[MusiqlRepository]:
     stmt = (
         select(MusiqlRepository)
         .select_from(UserLirbary)
         .join(MusiqlRepository, UserLirbary.record_id == MusiqlRepository.uri)
-        .where(UserLirbary.user_id == "derosaj-288b87")
+        .where(UserLirbary.user_id == user_id)
     ).order_by(MusiqlRepository.created.desc())
 
     session_maker: sessionmaker = get_session()
@@ -26,10 +25,11 @@ async def fetch_library() -> list[MusiqlRepository]:
         return rows
 
 
-async def GraphAMP_seed():
-    obj_key = "recommendation_models/GraphAMP.model"
-    s3_service: S3Service = get_s3_service()
-
+async def update_nodes(
+    model: Models,
+    s3_service: S3,
+):
+    obj_key = f"recommendation_models/GAMP/{model.uri}.gamp"
     try:
         file_stream = s3_service.pull_obj_stream(obj_key)
         graph_data = file_stream.read()
@@ -38,7 +38,7 @@ async def GraphAMP_seed():
     except Exception:
         G = nx.DiGraph()
 
-    rows: list[MusiqlRepository] = await fetch_library()
+    rows: list[MusiqlRepository] = await fetch_library(model.user_id)
     db_uris = {record.uri for record in rows}
 
     # --- 1. Add new nodes ---
@@ -82,6 +82,9 @@ async def GraphAMP_seed():
     return G
 
 
-async def seed_new() -> nx.DiGraph:
-    seed: nx.DiGraph = await GraphAMP_seed()
+async def seed_new(
+    model:Models,
+    s3_service:S3
+) -> nx.DiGraph:
+    seed: nx.DiGraph = await update_nodes(model, s3_service)
     return seed
