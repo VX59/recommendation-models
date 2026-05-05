@@ -136,7 +136,7 @@ def calculate_Cs(G: nx.DiGraph, continuous_session: list[SessionEvent]):
 
 
 def Cw_penalty(K: int, S: int):
-    return - (K / max(1, S * 0.1))
+    return -(K / max(1, S * 0.1))
 
 
 def calculate_Cw(G: nx.DiGraph, Ks: list[ContinuityBreak], S: int):
@@ -167,12 +167,12 @@ def calculate_Cw(G: nx.DiGraph, Ks: list[ContinuityBreak], S: int):
 
             for idx, skipped in enumerate(cw_ids):
                 factor = (idx + 1) / K
-                
+
                 if not G.has_edge(u, skipped):
                     G.add_edge(u, skipped, weight=0.0)
-                
+
                 G[u][skipped]["weight"] += factor * penalty
-                   
+
                 if not G.has_edge(skipped, v):
                     G.add_edge(skipped, v, weight=0.0)
 
@@ -195,17 +195,14 @@ def historical_engagement(uri: str, session: list[SessionEvent]):
 
 
 def calculate_Ce(G: nx.DiGraph, session: list[SessionEvent]):
-    engagement = {
-        u: historical_engagement(u, session)
-        for u in G.nodes
-    }
+    engagement = {u: historical_engagement(u, session) for u in G.nodes}
 
     for u in G.nodes:
         for v in G.successors(u):
             Ce = engagement[u] * engagement[v]
 
             if G.has_edge(u, v):
-                G[u][v]["weight"] *= (1 + 0.37 * Ce)
+                G[u][v]["weight"] *= 1 + 0.37 * Ce
 
 
 async def compute_session() -> Optional[nx.DiGraph]:

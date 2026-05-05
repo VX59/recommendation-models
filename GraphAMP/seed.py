@@ -2,13 +2,13 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
 from database.db import get_session
 from database.models import MusiqlRepository, UserLirbary, Models
-from s3_service import S3
+from boto3_tools import S3
 
 import networkx as nx
 import pickle
 
 
-async def fetch_library(user_id:str) -> list[MusiqlRepository]:
+async def fetch_library(user_id: str) -> list[MusiqlRepository]:
     stmt = (
         select(MusiqlRepository)
         .select_from(UserLirbary)
@@ -49,7 +49,6 @@ async def update_nodes(
             G.add_node(uri)
             new_nodes.add(uri)
 
-
     # --- 2. Remove stale nodes ---
     removed_nodes = 0
     for node in list(G.nodes):
@@ -63,7 +62,6 @@ async def update_nodes(
 
     for i in nodes:
         for j in nodes:
-
             if not G.has_edge(i, j):
                 # only lightly connect new nodes (NOT full dense init)
                 if i in new_nodes or j in new_nodes:
@@ -82,9 +80,6 @@ async def update_nodes(
     return G
 
 
-async def seed_new(
-    model:Models,
-    s3_service:S3
-) -> nx.DiGraph:
+async def seed_new(model: Models, s3_service: S3) -> nx.DiGraph:
     seed: nx.DiGraph = await update_nodes(model, s3_service)
     return seed

@@ -2,16 +2,13 @@ import networkx as nx
 import pickle
 from sqlalchemy.orm import sessionmaker
 
-from s3_service import S3
+from boto3_tools import S3
 from database.db import get_session
 from database.models import ModelUpdates, Models
 
 
 async def accumulate(
-    library_graph: nx.DiGraph,
-    session_graph: nx.DiGraph,
-    model: Models,
-    s3_service:S3
+    library_graph: nx.DiGraph, session_graph: nx.DiGraph, model: Models, s3_service: S3
 ):
     lr = 1
     existence_threshold = 1e-4
