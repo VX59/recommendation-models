@@ -9,7 +9,6 @@ from dataclasses import dataclass
 import networkx as nx
 from typing import Optional
 
-from loguru import logging
 
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:
