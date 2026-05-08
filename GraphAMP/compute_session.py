@@ -9,10 +9,7 @@ from dataclasses import dataclass
 import networkx as nx
 from typing import Optional
 
-import logging
-
-logger = logging.getLogger(__name__)
-
+from loguru import logging 
 
 async def pull_history() -> Optional[list[MusiqlHistory]]:
     session_maker: sessionmaker = get_session()
