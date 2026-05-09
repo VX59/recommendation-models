@@ -10,7 +10,6 @@ import networkx as nx
 from typing import Optional
 
 
-
 async def pull_history() -> Optional[list[MusiqlHistory]]:
     session_maker: sessionmaker = get_session()
 
